@@ -1,0 +1,93 @@
+---
+title: "Practical Machine Learning Project"
+author: "Michael Kobiliansky"
+date: "November 2014"
+output: html_document
+---
+
+
+##Background
+This course project deals with finding a prediction algorithm for the Weight lifting data (for details - http://groupware.les.inf.puc-rio.br/har, the section on the Weight Lifting Exercise Dataset).
+
+Our data comes with ready training and testing packages. 
+I want to make sure the missing values are properly defined.
+```{r}
+training <- read.csv("pml-training.csv", na.strings=c("", "NA", "NULL"))
+testing <- read.csv("pml-testing.csv", na.strings=c("", "NA", "NULL"))
+```
+
+
+```{r}
+dim(training); dim(testing)
+```
+It seems the testing data is only 20 cases - these are the same 20 cases used for the "submission" part.  
+160 variables is quite a lot, I will have to narrow it down a bit.
+
+
+##Dealing with missing values 
+
+The data, sadly, is filled with missing values and it cannot be ignored.
+  
+```{r}
+na_training <- sapply(training, function(x) {sum(is.na(x))})
+table(na_training)
+na_testing = sapply(testing, function(x) {sum(is.na(x))})
+table(na_testing)
+```
+
+It seems that NAs comprise the majority of cases for some variables, and I'll just remove those variables.  
+
+```{r}
+trainingClean <- training[, colSums(is.na(training)) == 0]
+testingClean <- testing[, colSums(is.na(testing)) == 0]
+
+dim(trainingClean); dim(testingClean)
+```
+
+...which leaves us 60 variables to work on.  
+Out if these, the first 6 are clearly of case descriptive nature and won't serve as good predictors.
+
+```{r}
+trainingClean <- trainingClean[, c(7:60)]
+testingClean <- testingClean[, c(7:60)]
+
+dim(trainingClean); dim(testingClean)
+```
+
+##Building prediction algorithm
+
+We need to predict the "classe" variable, which has 5 values (A-E), distributed more or less equally in the sample:  
+```{r}
+plot(trainingClean$classe)
+```
+
+I will split the training data into "training" and "testing", in order to estimate the out-of-sample error.  
+
+```{r}
+library(caret)
+inTrain <- createDataPartition(trainingClean$classe,p=0.7, list=FALSE)
+trainingData <- trainingClean[inTrain,]
+testingData <- trainingClean[-inTrain,]
+```
+
+I will use Random Forests with 4-fold cross validation.  
+```{r}
+ModFit <- train(classe ~., data = trainingData, method = "rf", prox = TRUE, trControl = trainControl(method = "cv", number = 4, allowParallel = TRUE))
+print(ModFit)
+```
+  
+That gives us 99% accuracy.  
+Trying the algorithm on the "testing" sample (estimating the out-of-sample error):
+```{r}
+testingPred <- predict(ModFit, testingData)
+confusionMatrix(testingPred, testingData$classe)
+```
+  
+That also gives 99% accuracy.  
+Predicting the Test data:
+```{r}
+PredValidation <- predict(ModFit, testingClean)
+PredValidation <- as.character(PredValidation)
+PredValidation
+```
+That results in 20/20 on the "submission" part.
